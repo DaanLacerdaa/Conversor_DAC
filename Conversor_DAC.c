@@ -14,13 +14,15 @@
 #define JOYSTICK_Y     27
 #define JOYSTICK_BTN   22
 #define BUTTON_A       5
-#define I2C_SDA       14
-#define I2C_SCL       15
-#define PWM_MAX       4095
-#define PWM_MIN       50     // Evita brilho muito baixo
-#define JOY_CENTER    2048
+#define I2C_SDA        14
+#define I2C_SCL        15
+#define PWM_MAX        4095
+#define PWM_MIN        50     // Evita brilho muito baixo
+#define JOY_CENTER     2048
 #define DEBOUNCE_DELAY_MS 50
 #define SQUARE_SIZE    8
+#define SCREEN_WIDTH   128
+#define SCREEN_HEIGHT  64
 
 // Tipos de borda disponíveis
 typedef enum {
@@ -42,9 +44,19 @@ bool pwm_enabled = true;
 BorderStyle border_style = BORDER_SOLID;
 ssd1306_t display;
 
+// Variáveis para o quadrado no display
+int square_x = (SCREEN_WIDTH - SQUARE_SIZE) / 2;
+int square_y = (SCREEN_HEIGHT - SQUARE_SIZE) / 2;
+
 // Protótipos de funções
 void draw_borders();
 void draw_square(uint8_t x, uint8_t y);
+void update_display();
+void setup_adc();
+void setup_pwm();
+void setup_i2c();
+void joystick_btn_isr(uint gpio, uint32_t events);
+void button_a_isr(uint gpio, uint32_t events);
 
 // Configuração do ADC
 void setup_adc() {
@@ -101,41 +113,22 @@ void draw_borders() {
         case BORDER_NONE:
             break;
         case BORDER_SOLID:
-            for (int i = 0; i < 128; i++) {
+            for (int i = 0; i < SCREEN_WIDTH; i++) {
                 ssd1306_draw_pixel(&display, i, 0);
-                ssd1306_draw_pixel(&display, i, 63);
+                ssd1306_draw_pixel(&display, i, SCREEN_HEIGHT - 1);
             }
-            for (int i = 0; i < 64; i++) {
+            for (int i = 0; i < SCREEN_HEIGHT; i++) {
                 ssd1306_draw_pixel(&display, 0, i);
-                ssd1306_draw_pixel(&display, 127, i);
-            }
-            break;
-        case BORDER_DOUBLE:
-            for (int i = 1; i < 127; i++) {
-                ssd1306_draw_pixel(&display, i, 0);
-                ssd1306_draw_pixel(&display, i, 1);
-                ssd1306_draw_pixel(&display, i, 62);
-                ssd1306_draw_pixel(&display, i, 63);
-            }
-            for (int i = 1; i < 63; i++) {
-                ssd1306_draw_pixel(&display, 0, i);
-                ssd1306_draw_pixel(&display, 1, i);
-                ssd1306_draw_pixel(&display, 126, i);
-                ssd1306_draw_pixel(&display, 127, i);
+                ssd1306_draw_pixel(&display, SCREEN_WIDTH - 1, i);
             }
             break;
     }
 }
 
 // Atualiza o display
-void update_display(uint16_t x, uint16_t y) {
+void update_display() {
     ssd1306_clear(&display);
-    
-    // Corrigindo o mapeamento do joystick (X e Y estavam invertidos)
-    uint8_t pos_x = (y * (128 - SQUARE_SIZE)) / PWM_MAX; // Agora usa Y para X
-    uint8_t pos_y = (x * (64 - SQUARE_SIZE)) / PWM_MAX;  // Agora usa X para Y
-    
-    draw_square(pos_x, pos_y);
+    draw_square(square_x, square_y);
     draw_borders();
     ssd1306_show(&display);
 }
@@ -150,43 +143,50 @@ int main() {
     gpio_set_irq_enabled_with_callback(JOYSTICK_BTN, GPIO_IRQ_EDGE_FALL, true, &joystick_btn_isr);
     gpio_set_irq_enabled_with_callback(BUTTON_A, GPIO_IRQ_EDGE_FALL, true, &button_a_isr);
 
-    ssd1306_init(&display, 128, 64, 0x3C, i2c1);
+    ssd1306_init(&display, SCREEN_WIDTH, SCREEN_HEIGHT, 0x3C, i2c1);
     ssd1306_clear(&display);
     ssd1306_show(&display);
 
-    uint16_t x = JOY_CENTER;
-    uint16_t y = JOY_CENTER;
-    update_display(x, y);
-
     while (true) {
-        adc_select_input(1); // Corrigindo ordem
-        x = adc_read();
+        // **Leitura correta dos eixos do joystick**
         adc_select_input(0);
-        y = adc_read();
+        uint16_t x = adc_read();
+        adc_select_input(1);
+        uint16_t y = adc_read();
 
+        // **Mapeamento correto**
+        square_x = (x * (SCREEN_WIDTH - SQUARE_SIZE)) / 4095;
+        square_y = (y * (SCREEN_HEIGHT - SQUARE_SIZE)) / 4095;
+
+        // **Controle PWM corrigido**
         if (pwm_enabled) {
-            uint16_t delta_x = abs(x - JOY_CENTER);
-            uint16_t delta_y = abs(y - JOY_CENTER);
-
-            pwm_set_gpio_level(LED_RED, pwm_enabled ? (PWM_MIN + ((delta_x * (PWM_MAX - PWM_MIN)) / JOY_CENTER)) : 0);
-            pwm_set_gpio_level(LED_BLUE, pwm_enabled ? (PWM_MIN + ((delta_y * (PWM_MAX - PWM_MIN)) / JOY_CENTER)) : 0);
+            pwm_set_gpio_level(LED_BLUE, abs((int)y - JOY_CENTER) / 16);
+            pwm_set_gpio_level(LED_RED, abs((int)x - JOY_CENTER) / 16);
         } else {
-            pwm_set_gpio_level(LED_RED, 0);
             pwm_set_gpio_level(LED_BLUE, 0);
+            pwm_set_gpio_level(LED_RED, 0);
         }
 
-        update_display(x, y);
+        update_display();
 
+        // **Botão do Joystick altera a borda**
         if (joystick_btn_flag) {
             joystick_btn_flag = false;
             green_led_on = !green_led_on;
             pwm_set_gpio_level(LED_GREEN, green_led_on ? PWM_MAX : 0);
             border_style = (border_style + 1) % BORDER_MAX_STYLES;
+            update_display();
         }
 
+        // **Botão A desliga os LEDs**
         if (button_a_flag) {
             button_a_flag = false;
             pwm_enabled = !pwm_enabled;
+            if (!pwm_enabled) {
+                pwm_set_gpio_level(LED_RED, 0);
+                pwm_set_gpio_level(LED_BLUE, 0);
+                pwm_set_gpio_level(LED_GREEN, 0);
+            }
         }
 
         sleep_ms(50);
