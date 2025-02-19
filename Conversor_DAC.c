@@ -100,7 +100,6 @@ void draw_borders() {
     switch (border_style) {
         case BORDER_NONE:
             break;
-
         case BORDER_SOLID:
             for (int i = 0; i < 128; i++) {
                 ssd1306_draw_pixel(&display, i, 0);
@@ -111,7 +110,6 @@ void draw_borders() {
                 ssd1306_draw_pixel(&display, 127, i);
             }
             break;
-
         case BORDER_DOUBLE:
             for (int i = 1; i < 127; i++) {
                 ssd1306_draw_pixel(&display, i, 0);
@@ -126,33 +124,16 @@ void draw_borders() {
                 ssd1306_draw_pixel(&display, 127, i);
             }
             break;
-
-        case BORDER_ROUND:
-            ssd1306_draw_square(&display, 0, 0, 3, 3);
-            ssd1306_draw_square(&display, 124, 0, 3, 3);
-            ssd1306_draw_square(&display, 0, 60, 3, 3);
-            ssd1306_draw_square(&display, 124, 60, 3, 3);
-            break;
-
-
-        case BORDER_DOTTED:
-            for (int i = 0; i < 128; i += 4) {
-                ssd1306_draw_pixel(&display, i, 0);
-                ssd1306_draw_pixel(&display, i, 63);
-            }
-            for (int i = 0; i < 64; i += 4) {
-                ssd1306_draw_pixel(&display, 0, i);
-                ssd1306_draw_pixel(&display, 127, i);
-            }
-            break;
     }
 }
 
 // Atualiza o display
 void update_display(uint16_t x, uint16_t y) {
     ssd1306_clear(&display);
-    uint8_t pos_x = (x * (128 - SQUARE_SIZE)) / PWM_MAX;
-    uint8_t pos_y = (y * (64 - SQUARE_SIZE)) / PWM_MAX;
+    
+    // Corrigindo o mapeamento do joystick (X e Y estavam invertidos)
+    uint8_t pos_x = (y * (128 - SQUARE_SIZE)) / PWM_MAX; // Agora usa Y para X
+    uint8_t pos_y = (x * (64 - SQUARE_SIZE)) / PWM_MAX;  // Agora usa X para Y
     
     draw_square(pos_x, pos_y);
     draw_borders();
@@ -178,17 +159,20 @@ int main() {
     update_display(x, y);
 
     while (true) {
-        adc_select_input(0);
+        adc_select_input(1); // Corrigindo ordem
         x = adc_read();
-        adc_select_input(1);
+        adc_select_input(0);
         y = adc_read();
 
         if (pwm_enabled) {
             uint16_t delta_x = abs(x - JOY_CENTER);
             uint16_t delta_y = abs(y - JOY_CENTER);
 
-            pwm_set_gpio_level(LED_RED, PWM_MIN + ((delta_x * (PWM_MAX - PWM_MIN)) / JOY_CENTER));
-            pwm_set_gpio_level(LED_BLUE, PWM_MIN + ((delta_y * (PWM_MAX - PWM_MIN)) / JOY_CENTER));
+            pwm_set_gpio_level(LED_RED, pwm_enabled ? (PWM_MIN + ((delta_x * (PWM_MAX - PWM_MIN)) / JOY_CENTER)) : 0);
+            pwm_set_gpio_level(LED_BLUE, pwm_enabled ? (PWM_MIN + ((delta_y * (PWM_MAX - PWM_MIN)) / JOY_CENTER)) : 0);
+        } else {
+            pwm_set_gpio_level(LED_RED, 0);
+            pwm_set_gpio_level(LED_BLUE, 0);
         }
 
         update_display(x, y);
