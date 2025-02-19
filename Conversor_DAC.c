@@ -17,13 +17,12 @@
 #define I2C_SDA        14
 #define I2C_SCL        15
 #define PWM_MAX        4095
-#define PWM_MIN        50     // Evita brilho muito baixo
+#define PWM_MIN        50
 #define JOY_CENTER     2048
 #define DEBOUNCE_DELAY_MS 50
 #define SQUARE_SIZE    8
 #define SCREEN_WIDTH   128
 #define SCREEN_HEIGHT  64
-
 
 // Tipos de borda disponíveis
 typedef enum {
@@ -48,6 +47,7 @@ ssd1306_t display;
 // Variáveis para o quadrado no display
 int square_x = (SCREEN_WIDTH - SQUARE_SIZE) / 2;
 int square_y = (SCREEN_HEIGHT - SQUARE_SIZE) / 2;
+
 
 // Protótipos de funções
 void draw_borders();
@@ -113,12 +113,39 @@ void draw_borders() {
     switch (border_style) {
         case BORDER_NONE:
             break;
+
         case BORDER_SOLID:
             for (int i = 0; i < SCREEN_WIDTH; i++) {
                 ssd1306_draw_pixel(&display, i, 0);
                 ssd1306_draw_pixel(&display, i, SCREEN_HEIGHT - 1);
             }
             for (int i = 0; i < SCREEN_HEIGHT; i++) {
+                ssd1306_draw_pixel(&display, 0, i);
+                ssd1306_draw_pixel(&display, SCREEN_WIDTH - 1, i);
+            }
+            break;
+
+        case BORDER_DOUBLE:
+            for (int i = 1; i < SCREEN_WIDTH - 1; i++) {
+                ssd1306_draw_pixel(&display, i, 0);
+                ssd1306_draw_pixel(&display, i, 1);
+                ssd1306_draw_pixel(&display, i, SCREEN_HEIGHT - 2);
+                ssd1306_draw_pixel(&display, i, SCREEN_HEIGHT - 1);
+            }
+            for (int i = 1; i < SCREEN_HEIGHT - 1; i++) {
+                ssd1306_draw_pixel(&display, 0, i);
+                ssd1306_draw_pixel(&display, 1, i);
+                ssd1306_draw_pixel(&display, SCREEN_WIDTH - 2, i);
+                ssd1306_draw_pixel(&display, SCREEN_WIDTH - 1, i);
+            }
+            break;
+
+        case BORDER_DOTTED:
+            for (int i = 0; i < SCREEN_WIDTH; i += 4) {
+                ssd1306_draw_pixel(&display, i, 0);
+                ssd1306_draw_pixel(&display, i, SCREEN_HEIGHT - 1);
+            }
+            for (int i = 0; i < SCREEN_HEIGHT; i += 4) {
                 ssd1306_draw_pixel(&display, 0, i);
                 ssd1306_draw_pixel(&display, SCREEN_WIDTH - 1, i);
             }
@@ -151,47 +178,39 @@ int main() {
     ssd1306_show(&display);
 
     while (true) {
-        // **Leitura correta dos eixos do joystick**
-        adc_select_input(0);
-        uint16_t x = adc_read();
         adc_select_input(1);
+        uint16_t x = adc_read();
+        adc_select_input(0);
         uint16_t y = adc_read();
 
-        // **Mapeamento correto**
         square_x = (x * (SCREEN_WIDTH - SQUARE_SIZE)) / 4095;
-        square_y = (y * (SCREEN_HEIGHT - SQUARE_SIZE)) / 4095;
+        square_y = ((4095 - y) * (SCREEN_HEIGHT - SQUARE_SIZE)) / 4095;
 
-        // **Controle PWM corrigido**
         if (pwm_enabled) {
-            pwm_set_gpio_level(LED_BLUE, abs((int)y - JOY_CENTER) / 16);
-            pwm_set_gpio_level(LED_RED, abs((int)x - JOY_CENTER) / 16);
+            pwm_set_gpio_level(LED_BLUE, abs((int)y - JOY_CENTER) * PWM_MAX / 4095);
+            pwm_set_gpio_level(LED_RED, abs((int)x - JOY_CENTER) * PWM_MAX / 4095);
         } else {
             pwm_set_gpio_level(LED_BLUE, 0);
             pwm_set_gpio_level(LED_RED, 0);
+            pwm_set_gpio_level(LED_GREEN, 0);
         }
 
         update_display();
 
-        // **Botão do Joystick altera a borda**
         if (joystick_btn_flag) {
             joystick_btn_flag = false;
             green_led_on = !green_led_on;
-            pwm_set_gpio_level(LED_GREEN, green_led_on ? PWM_MAX : 0);
+            pwm_set_gpio_level(LED_GREEN, green_led_on ? PWM_MAX : 0); // Correção aqui
             border_style = (border_style + 1) % BORDER_MAX_STYLES;
             update_display();
         }
+        
 
-        // **Botão A desliga os LEDs**
         if (button_a_flag) {
             button_a_flag = false;
             pwm_enabled = !pwm_enabled;
-            if (!pwm_enabled) {
-                pwm_set_gpio_level(LED_RED, 0);
-                pwm_set_gpio_level(LED_BLUE, 0);
-                pwm_set_gpio_level(LED_GREEN, 0);
-            }
         }
 
         sleep_ms(50);
     }
-}
+} 
