@@ -24,6 +24,7 @@
 #define SCREEN_WIDTH   128
 #define SCREEN_HEIGHT  64
 
+
 // Tipos de borda disponíveis
 typedef enum {
     BORDER_NONE,
@@ -139,6 +140,8 @@ int main() {
     setup_adc();
     setup_pwm();
     setup_i2c();
+    gpio_pull_up(JOYSTICK_BTN);
+    gpio_pull_up(BUTTON_A);
 
     gpio_set_irq_enabled_with_callback(JOYSTICK_BTN, GPIO_IRQ_EDGE_FALL, true, &joystick_btn_isr);
     gpio_set_irq_enabled_with_callback(BUTTON_A, GPIO_IRQ_EDGE_FALL, true, &button_a_isr);
