@@ -128,11 +128,12 @@ void draw_borders() {
             break;
 
         case BORDER_ROUND:
-            ssd1306_draw_circle(&display, 0, 0, 3);
-            ssd1306_draw_circle(&display, 127, 0, 3);
-            ssd1306_draw_circle(&display, 0, 63, 3);
-            ssd1306_draw_circle(&display, 127, 63, 3);
+            ssd1306_draw_square(&display, 0, 0, 3, 3);
+            ssd1306_draw_square(&display, 124, 0, 3, 3);
+            ssd1306_draw_square(&display, 0, 60, 3, 3);
+            ssd1306_draw_square(&display, 124, 60, 3, 3);
             break;
+
 
         case BORDER_DOTTED:
             for (int i = 0; i < 128; i += 4) {
